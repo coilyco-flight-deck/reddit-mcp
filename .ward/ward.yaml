@@ -1,0 +1,41 @@
+# Per-repo command allowlist for reddit-mcp (the `ward` gate).
+#
+# `ward lint` enforces: each command's `run` equals `make <verb>`, the Makefile
+# declares that target, and the description equals the target's `## desc`.
+#
+# Deploy verbs are deliberately absent - the deploy surface lives in
+# coilyco-bridge/deploy per the layer invariant (source -> deploy).
+
+commands:
+  sync:
+    run: make sync
+    description: uv lock + uv sync with dev deps.
+  test:
+    run: make test
+    description: Run the pytest suite.
+  lint:
+    run: make lint
+    description: ruff check + ruff format --check + mypy on src/ and tests/.
+  fmt:
+    run: make fmt
+    description: Apply ruff fixes and formatting in place.
+  precommit:
+    run: make precommit
+    description: Run all pre-commit hooks against every file.
+  build-docker:
+    run: make build-docker
+    description: Build the reddit-mcp docker image locally.
+  run:
+    run: make run
+    description: Run the MCP server locally over streamable-HTTP on :9111.
+
+catalog:
+  kind: Component
+  type: service
+  system: infrastructure
+  owner: kai
+  lifecycle: production
+  description: "Read-only MCP republishing Kai's private reddit feeds (front page, inbox-unread, upvoted) over streamable-HTTP. A pure-read clone of the personal-MCP fleet; feed URLs resolve from env/SSM at runtime and never enter the image. Deploy surface lives in coilyco-bridge/deploy."
+  dependsOn: []
+  providesApis:
+    - reddit-mcp
