@@ -34,5 +34,4 @@ Plain outbound-HTTP reader (no host namespaces, no hostPath). Image published to
 - [../README.md](../README.md) - human-facing intro.
 - [../AGENTS.md](../AGENTS.md) - agent operating context.
 - [../.ward/ward.yaml](../.ward/ward.yaml) - allowlisted commands + catalog block.
-
-Cross-reference convention from [coilysiren/agentic-os#59](https://github.com/coilyco-flight-deck/agentic-os/issues/59).
+- [features-release-tooling.md](features-release-tooling.md) - durable cross-reference style for this repo.

@@ -2,11 +2,11 @@
 
 A read-only MCP that republishes Kai's existing reddit reads as MCP tools over streamable-HTTP, so an agent (or the claude.ai hosted connector) can see the reddit front page, unread inbox, and upvoted posts without a Reddit API app.
 
-It wraps the exact private Reddit JSON feeds the `daily-social` and `daily-educational` cron routines already read (`agentic-os-kai` `my.sources.reddit`). This is the first pure-read clone of the [coilyco-bridge/deploy#30](https://forgejo.coilysiren.me/coilyco-bridge/deploy) personal-MCP fleet, fulfilling [coilysiren/inbox#163](https://forgejo.coilysiren.me/coilysiren/inbox/issues/163).
+It wraps the exact private Reddit JSON feeds the `daily-social` and `daily-educational` cron routines already read (`agentic-os-kai` `my.sources.reddit`). This is the first pure-read clone of the [coilyco-bridge/deploy](https://forgejo.coilysiren.me/coilyco-bridge/deploy) personal-MCP fleet, and it mirrors the inbox-backed rollout plan.
 
 ## Read-only by construction
 
-A private Reddit feed URL is a read token minted by Reddit's `/prefs/feeds/` page for the logged-in user - **a feed URL cannot post, vote, or comment.** That is the whole point: it deliberately sidesteps the 2026 Responsible Builder Policy API-app gate (no Reddit API app), per deploy#30. There is no write tool here, and no path that both ingests untrusted content and can act. This service reads, full stop.
+A private Reddit feed URL is a read token minted by Reddit's `/prefs/feeds/` page for the logged-in user - **a feed URL cannot post, vote, or comment.** That is the whole point: it deliberately sidesteps the 2026 Responsible Builder Policy API-app gate (no Reddit API app). There is no write tool here, and no path that both ingests untrusted content and can act. This service reads, full stop.
 
 Unlike [node-stats-mcp](https://forgejo.coilysiren.me/coilyco-flight-deck/node-stats-mcp) (the shape this repo is patterned on), reddit-mcp is a **plain outbound-HTTP reader**: no `hostPID`, `hostNetwork`, `hostPath`, `ROOTFS`, or readable-roots. It is a dumb backend that fetches three URLs.
 
@@ -46,5 +46,4 @@ Auth is **not** in this source. The Authelia/Traefik public overlay is layered o
 - [docs/FEATURES.md](docs/FEATURES.md) - inventory of what ships today.
 - [.ward/ward.yaml](.ward/ward.yaml) - allowlisted commands + catalog block.
 - [coilyco-flight-deck/node-stats-mcp](https://forgejo.coilysiren.me/coilyco-flight-deck/node-stats-mcp) - the source pattern this repo mirrors.
-
-Cross-reference convention from [coilysiren/agentic-os#59](https://github.com/coilyco-flight-deck/agentic-os/issues/59).
+- [docs/features-release-tooling.md](docs/features-release-tooling.md) - durable cross-reference style for this repo.
