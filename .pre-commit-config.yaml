@@ -26,15 +26,17 @@ repos:
         stages: [pre-commit, pre-push]
 
   # BEGIN managed by agentic-os/scripts/apply-agentic-os-hooks.py
-  - repo: https://github.com/coilyco-flight-deck/agentic-os
-    rev: v0.18.0
+  - repo: https://forgejo.coilysiren.me/coilyco-flight-deck/agentic-os
+    rev: v0.214.0
     hooks:
       - id: catalog-doc-size
       - id: catalog-trifecta
       - id: documentation-layout
       - id: context-load-points
       - id: catalog-block-present
-      - id: validate-skills
+      - id: issue-reference-guard
+        stages: [pre-commit]
+      - id: check-skills
       - id: dead-cross-links
       - id: repo-pointer-skills
       - id: trufflehog
