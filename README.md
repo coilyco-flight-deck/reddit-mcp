@@ -21,7 +21,7 @@ Env-first lets the deploy inject the URLs via an ExternalSecret without granting
 
 ## Port
 
-Streamable-HTTP on `PORT` (default **9111**), `HOST` (default `0.0.0.0`), endpoint at `/mcp`. node-stats holds `9110`; reddit-mcp takes the next free kai-server port, `9111`.
+Streamable-HTTP on `PORT` (default **9111**), `HOST` (default `0.0.0.0`), endpoint at `/mcp`. The transport is stateless so requests can move safely between deploy replicas. node-stats holds `9110`; reddit-mcp takes the next free kai-server port, `9111`.
 
 ## Run it locally
 

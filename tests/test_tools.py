@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import importlib
 from types import ModuleType
+from unittest.mock import Mock
 
 import pytest
+import requests
 
 
 def _load(monkeypatch: pytest.MonkeyPatch, env: dict[str, str] | None = None) -> ModuleType:
@@ -99,6 +101,98 @@ def test_inbox_filters_to_t1_and_t4(monkeypatch: pytest.MonkeyPatch) -> None:
     assert kinds == {"comment_reply", "message"}
 
 
+def test_valid_empty_listing_stays_successful(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _load(monkeypatch, {"REDDIT_FRONTPAGE_FEED_URL": "https://feed/frontpage"})
+    monkeypatch.setattr(server, "_fetch_json", lambda url: {"data": {"children": []}})
+
+    assert server.get_frontpage() == {"source": "frontpage", "count": 0, "items": []}
+
+
+def test_http_failure_is_redacted(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = _load(monkeypatch)
+    secret_url = "https://feed.invalid/listing?token=secret"
+    secret_body = "upstream echoed token=secret"
+    response = Mock(ok=False, status_code=403, text=secret_body)
+    monkeypatch.setattr(server.requests, "get", lambda *args, **kwargs: response)
+
+    with pytest.raises(server.RedditFeedError, match=r"^Reddit feed returned HTTP 403$") as raised:
+        server._fetch_json(secret_url)
+
+    rendered = f"{raised.value} {caplog.text}"
+    assert secret_url not in rendered
+    assert secret_body not in rendered
+    response.json.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [
+        (requests.Timeout("https://feed.invalid/?token=secret"), "Reddit feed request timed out"),
+        (
+            requests.ConnectionError("https://feed.invalid/?token=secret"),
+            "Reddit feed request failed",
+        ),
+    ],
+)
+def test_network_failure_is_redacted(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    error: requests.RequestException,
+    message: str,
+) -> None:
+    server = _load(monkeypatch)
+    monkeypatch.setattr(server.requests, "get", Mock(side_effect=error))
+
+    with pytest.raises(server.RedditFeedError, match=rf"^{message}$") as raised:
+        server._fetch_json("https://feed.invalid/?token=secret")
+
+    rendered = f"{raised.value} {caplog.text}"
+    assert "feed.invalid" not in rendered
+    assert "token=secret" not in rendered
+
+
+def test_invalid_json_is_redacted(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = _load(monkeypatch)
+    secret_url = "https://feed.invalid/listing?token=secret"
+    secret_body = "not json token=secret"
+    response = Mock(ok=True, status_code=200)
+    response.json.side_effect = requests.exceptions.JSONDecodeError("invalid", secret_body, 0)
+    monkeypatch.setattr(server.requests, "get", lambda *args, **kwargs: response)
+
+    with pytest.raises(
+        server.RedditFeedError, match=r"^Reddit feed returned invalid JSON$"
+    ) as raised:
+        server._fetch_json(secret_url)
+
+    rendered = f"{raised.value} {caplog.text}"
+    assert secret_url not in rendered
+    assert secret_body not in rendered
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        {},
+        {"data": None},
+        {"data": {}},
+        {"data": {"children": {}}},
+        {"data": {"children": [None]}},
+    ],
+)
+def test_invalid_listing_shape_fails(payload: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _load(monkeypatch, {"REDDIT_UPVOTED_FEED_URL": "https://feed/upvoted"})
+    monkeypatch.setattr(server, "_fetch_json", lambda url: payload)
+
+    with pytest.raises(server.RedditFeedError, match=r"^Reddit feed returned an invalid listing$"):
+        server.get_upvoted()
+
+
 def test_unconfigured_feed_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     server = _load(monkeypatch)  # no env
     monkeypatch.setattr(server, "_ssm", lambda name: None)  # no SSM either
@@ -133,3 +227,9 @@ def test_no_write_tools_registered(monkeypatch: pytest.MonkeyPatch) -> None:
         verb = n.split("_", 1)[0]
         assert verb == "get", f"non-read tool {n!r} registered"
         assert verb not in forbidden_verbs
+
+
+def test_mcp_transport_avoids_pod_local_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _load(monkeypatch)
+
+    assert server.mcp.settings.stateless_http is True

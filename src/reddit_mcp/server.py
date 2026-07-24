@@ -49,7 +49,14 @@ mcp = FastMCP(
     "reddit",
     host=os.environ.get("HOST", "0.0.0.0"),
     port=int(os.environ.get("PORT", "9111")),
+    # The deploy runs multiple replicas. Pod-local MCP sessions break as soon
+    # as the Service sends a later request to a different replica.
+    stateless_http=True,
 )
+
+
+class RedditFeedError(RuntimeError):
+    """Safe caller-facing failure with feed credentials redacted."""
 
 
 def _ssm(name: str) -> str | None:
@@ -95,23 +102,35 @@ def _feed_url(feed: str) -> str:
     return url
 
 
-def _fetch_json(url: str) -> dict | None:
+def _fetch_json(url: str) -> object:
     """GET a reddit JSON feed. Read-only: this is the only network call, a plain
     outbound GET a feed URL cannot turn into a write."""
     try:
-        r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
-        if not r.ok:
-            return None
-        return r.json()
-    except Exception:
-        return None
+        response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
+    except requests.Timeout:
+        raise RedditFeedError("Reddit feed request timed out") from None
+    except requests.RequestException:
+        raise RedditFeedError("Reddit feed request failed") from None
+
+    if not response.ok:
+        raise RedditFeedError(f"Reddit feed returned HTTP {response.status_code}")
+
+    try:
+        return response.json()
+    except requests.exceptions.JSONDecodeError:
+        raise RedditFeedError("Reddit feed returned invalid JSON") from None
 
 
-def _children(payload: dict | None) -> list[dict]:
-    if not payload:
-        return []
-    data = payload.get("data") or {}
-    return data.get("children") or []
+def _children(payload: object) -> list[dict]:
+    if not isinstance(payload, dict):
+        raise RedditFeedError("Reddit feed returned an invalid listing")
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise RedditFeedError("Reddit feed returned an invalid listing")
+    children = data.get("children")
+    if not isinstance(children, list) or not all(isinstance(child, dict) for child in children):
+        raise RedditFeedError("Reddit feed returned an invalid listing")
+    return children
 
 
 def _normalize_post(child: dict) -> dict[str, Any]:
