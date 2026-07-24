@@ -21,7 +21,6 @@ def _load(monkeypatch: pytest.MonkeyPatch, env: dict[str, str] | None = None) ->
     """Reimport the server module with a clean feed-URL env applied."""
     for _feed, (env_var, _ssm) in [
         ("frontpage", ("REDDIT_FRONTPAGE_FEED_URL", "")),
-        ("inbox_unread", ("REDDIT_INBOX_UNREAD_FEED_URL", "")),
         ("upvoted", ("REDDIT_UPVOTED_FEED_URL", "")),
     ]:
         monkeypatch.delenv(env_var, raising=False)
@@ -58,26 +57,6 @@ _FRONTPAGE_PAYLOAD = {
     }
 }
 
-_INBOX_PAYLOAD = {
-    "data": {
-        "children": [
-            {
-                "kind": "t1",
-                "data": {
-                    "name": "t1_reply",
-                    "author": "a",
-                    "body": " hi ",
-                    "context": "/r/x/comments/1/_/2/",
-                    "new": True,
-                },
-            },
-            {"kind": "t4", "data": {"name": "t4_msg", "author": "b", "subject": "hello"}},
-            # A t3 must not leak into the inbox surface.
-            {"kind": "t3", "data": {"name": "t3_nope"}},
-        ]
-    }
-}
-
 
 def test_frontpage_normalizes(monkeypatch: pytest.MonkeyPatch) -> None:
     server = _load(monkeypatch, {"REDDIT_FRONTPAGE_FEED_URL": "https://feed/frontpage"})
@@ -90,15 +69,6 @@ def test_frontpage_normalizes(monkeypatch: pytest.MonkeyPatch) -> None:
     assert post["title"] == "A post"  # stripped
     assert post["permalink"] == "https://www.reddit.com/r/python/comments/abc/a_post/"
     assert post["score"] == 42
-
-
-def test_inbox_filters_to_t1_and_t4(monkeypatch: pytest.MonkeyPatch) -> None:
-    server = _load(monkeypatch, {"REDDIT_INBOX_UNREAD_FEED_URL": "https://feed/inbox"})
-    monkeypatch.setattr(server, "_fetch_json", lambda url: _INBOX_PAYLOAD)
-    got = server.get_inbox_unread()
-    assert got["count"] == 2  # the t3 child is dropped
-    kinds = {item["kind"] for item in got["items"]}
-    assert kinds == {"comment_reply", "message"}
 
 
 def test_valid_empty_listing_stays_successful(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -219,7 +189,7 @@ def test_no_write_tools_registered(monkeypatch: pytest.MonkeyPatch) -> None:
     """The read-only invariant: every registered tool reads, none can act."""
     server = _load(monkeypatch)
     names = [t.name for t in server.mcp._tool_manager.list_tools()]
-    assert names, "expected tools to be registered"
+    assert set(names) == {"get_frontpage", "get_upvoted"}
     # The action verb is the leading underscore-delimited token; every tool must
     # read (`get_`), never act. A write tool would lead with post/vote/submit/...
     forbidden_verbs = {"post", "vote", "comment", "reply", "submit", "delete", "send", "mark"}

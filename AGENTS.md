@@ -4,7 +4,7 @@ Workspace conventions load globally via `~/.claude/CLAUDE.md`. This file covers 
 
 ## Scope
 
-A single tiny Python service: a FastMCP server (`src/reddit_mcp/server.py`) that republishes Kai's three private Reddit JSON feeds - front page, inbox-unread, upvoted - as read-only MCP tools over streamable-HTTP.
+A single tiny Python service: a FastMCP server (`src/reddit_mcp/server.py`) that republishes Kai's two private Reddit JSON feeds - front page and upvoted - as read-only MCP tools over streamable-HTTP.
 
 ## Project shape
 

@@ -1,7 +1,7 @@
 [project]
 name = "reddit-mcp"
 version = "0.1.0"
-description = "Read-only MCP republishing Kai's private reddit reads (front page, inbox-unread, upvoted) over streamable-HTTP."
+description = "Read-only MCP republishing Kai's private reddit reads (front page and upvoted) over streamable-HTTP."
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "MIT" }

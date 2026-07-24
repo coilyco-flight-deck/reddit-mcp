@@ -1,13 +1,12 @@
 """FastMCP server republishing Kai's private Reddit feeds over streamable-HTTP.
 
 Read-only by construction. Each tool fetches one private Reddit JSON feed URL and
-returns the same normalized records the `daily-social` / `daily-educational` cron
-routines already produce (the normalization here is ported verbatim from
+returns the same normalized records the `daily-educational` cron routine already
+produces (the normalization here is ported verbatim from
 `agentic-os-kai` `my.sources.reddit`, so the tool surface stays faithful to the
 audited routine surface):
 
 - get_frontpage      - personalized front page (subscribed subs)      [daily-educational]
-- get_inbox_unread   - unread replies + mentions + private messages   [daily-social]
 - get_upvoted        - posts the user has upvoted (interest signal)    [daily-educational]
 
 A feed URL is a read token minted by Reddit's `/prefs/feeds/` page for the
@@ -41,7 +40,6 @@ TIMEOUT = 20
 # granting the pod ssm:GetParameter, matching node-stats' env-based config.
 FEEDS = {
     "frontpage": ("REDDIT_FRONTPAGE_FEED_URL", "/reddit/frontpage-feed-url"),
-    "inbox_unread": ("REDDIT_INBOX_UNREAD_FEED_URL", "/reddit/inbox-unread-feed-url"),
     "upvoted": ("REDDIT_UPVOTED_FEED_URL", "/reddit/upvoted-feed-url"),
 }
 
@@ -156,30 +154,6 @@ def _normalize_post(child: dict) -> dict[str, Any]:
     }
 
 
-def _normalize_inbox(child: dict) -> dict[str, Any]:
-    """Flatten a t1 (comment reply) or t4 (private message) inbox item.
-
-    Ported from my.sources.reddit._normalize_inbox.
-    """
-    d = child.get("data") or {}
-    kind = child.get("kind") or ""
-    name = d.get("name") or ""
-    context = d.get("context") or ""
-    return {
-        "dedup_key": name,
-        "id": name,
-        "kind": "comment_reply" if kind == "t1" else ("message" if kind == "t4" else kind),
-        "subreddit": d.get("subreddit") or "",
-        "author": d.get("author") or "",
-        "subject": (d.get("subject") or "").strip(),
-        "body": (d.get("body") or "").strip(),
-        "context_url": f"https://www.reddit.com{context}" if context else "",
-        "created_utc": d.get("created_utc") or 0,
-        "was_comment": bool(d.get("was_comment")),
-        "new": bool(d.get("new")),
-    }
-
-
 def _posts(feed: str) -> dict[str, Any]:
     """Fetch a link-listing feed and return its normalized t3 posts."""
     payload = _fetch_json(_feed_url(feed))
@@ -205,19 +179,6 @@ def get_upvoted() -> dict[str, Any]:
     return _posts("upvoted")
 
 
-def get_inbox_unread() -> dict[str, Any]:
-    """Kai's unread reddit inbox: comment replies (t1) and private messages (t4).
-
-    Reads the private `/reddit/inbox-unread-feed-url` feed. Mirrors what
-    daily-social pulls. Read-only: fetching the feed does not mark anything read.
-    """
-    payload = _fetch_json(_feed_url("inbox_unread"))
-    items = [
-        _normalize_inbox(c) for c in _children(payload) if (c.get("kind") or "") in ("t1", "t4")
-    ]
-    return {"source": "inbox_unread", "count": len(items), "items": items}
-
-
 # Register each tool without rebinding its name, so the plain callables stay
 # directly invokable (tests call them; the mcp SDK's decorator return type has
 # varied across versions, so we don't rely on it). Every registered tool is a
@@ -225,7 +186,6 @@ def get_inbox_unread() -> dict[str, Any]:
 for _tool in (
     get_frontpage,
     get_upvoted,
-    get_inbox_unread,
 ):
     mcp.tool()(_tool)
 

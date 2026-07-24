@@ -1,9 +1,8 @@
 """reddit-mcp: read-only MCP republishing Kai's reddit reads over streamable-HTTP.
 
 The first pure-read clone of the personal-MCP fleet. It wraps the same private
-Reddit JSON feeds the `daily-social` and `daily-educational` cron routines
-already read - front page, inbox-unread, and upvoted - and serves them as MCP
-tools.
+Reddit JSON feeds the `daily-educational` cron routine already reads - front
+page and upvoted - and serves them as MCP tools.
 
 Read-only by construction: a private Reddit feed URL is a read token (a feed URL
 cannot write), which is the whole point - it sidesteps the 2026 Responsible

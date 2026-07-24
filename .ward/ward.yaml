@@ -35,7 +35,7 @@ catalog:
   system: infrastructure
   owner: kai
   lifecycle: production
-  description: "Read-only MCP republishing Kai's private reddit feeds (front page, inbox-unread, upvoted) over streamable-HTTP. A pure-read clone of the personal-MCP fleet; feed URLs resolve from env/SSM at runtime and never enter the image. Deploy surface lives in coilyco-bridge/deploy."
+  description: "Read-only MCP republishing Kai's private reddit feeds (front page and upvoted) over streamable-HTTP. A pure-read clone of the personal-MCP fleet. Feed URLs resolve from env/SSM at runtime and never enter the image. Deploy surface lives in coilyco-bridge/deploy."
   dependsOn: []
   providesApis:
     - reddit-mcp

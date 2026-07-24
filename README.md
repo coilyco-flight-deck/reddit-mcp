@@ -1,21 +1,21 @@
 # reddit-mcp
 
-A read-only MCP that republishes Kai's existing reddit reads as MCP tools over streamable-HTTP, so an agent (or the claude.ai hosted connector) can see the reddit front page, unread inbox, and upvoted posts without a Reddit API app.
+A read-only MCP that republishes Kai's existing reddit reads as MCP tools over streamable-HTTP, so an agent (or the claude.ai hosted connector) can see the reddit front page and upvoted posts without a Reddit API app.
 
-It wraps the exact private Reddit JSON feeds the `daily-social` and `daily-educational` cron routines already read (`agentic-os-kai` `my.sources.reddit`). This is the first pure-read clone of the [coilyco-bridge/deploy](https://forgejo.coilysiren.me/coilyco-bridge/deploy) personal-MCP fleet, and it mirrors the inbox-backed rollout plan.
+It wraps the exact private Reddit JSON feeds the `daily-educational` cron routine already reads (`agentic-os-kai` `my.sources.reddit`). This is the first pure-read clone of the [coilyco-bridge/deploy](https://forgejo.coilysiren.me/coilyco-bridge/deploy) personal-MCP fleet, and it mirrors the shared personal-MCP rollout pattern.
 
 ## Read-only by construction
 
 A private Reddit feed URL is a read token minted by Reddit's `/prefs/feeds/` page for the logged-in user - **a feed URL cannot post, vote, or comment.** That is the whole point: it deliberately sidesteps the 2026 Responsible Builder Policy API-app gate (no Reddit API app). There is no write tool here, and no path that both ingests untrusted content and can act. This service reads, full stop.
 
-Unlike [node-stats-mcp](https://forgejo.coilysiren.me/coilyco-flight-deck/node-stats-mcp) (the shape this repo is patterned on), reddit-mcp is a **plain outbound-HTTP reader**: no `hostPID`, `hostNetwork`, `hostPath`, `ROOTFS`, or readable-roots. It is a dumb backend that fetches three URLs.
+Unlike [node-stats-mcp](https://forgejo.coilysiren.me/coilyco-flight-deck/node-stats-mcp) (the shape this repo is patterned on), reddit-mcp is a **plain outbound-HTTP reader**: no `hostPID`, `hostNetwork`, `hostPath`, `ROOTFS`, or readable-roots. It is a dumb backend that fetches two URLs.
 
 ## Credential custody
 
 The feed URLs are private (equivalent to passwords) and **never** live in the image, the repo, or a committed config. Each is resolved at runtime, server-side:
 
-1. an env var (`REDDIT_FRONTPAGE_FEED_URL`, `REDDIT_INBOX_UNREAD_FEED_URL`, `REDDIT_UPVOTED_FEED_URL`), then
-2. SSM SecureString (`/reddit/frontpage-feed-url`, `/reddit/inbox-unread-feed-url`, `/reddit/upvoted-feed-url`) via `aws ssm get-parameter --with-decryption`.
+1. an env var (`REDDIT_FRONTPAGE_FEED_URL`, `REDDIT_UPVOTED_FEED_URL`), then
+2. SSM SecureString (`/reddit/frontpage-feed-url`, `/reddit/upvoted-feed-url`) via `aws ssm get-parameter --with-decryption`.
 
 Env-first lets the deploy inject the URLs via an ExternalSecret without granting the pod `ssm:GetParameter` (node-stats' env-based config), while the SSM fallback mirrors `my.sources.reddit` and the mcporter `ssm-load` pattern. The keys never leave the box - only the fetched reddit records do.
 
@@ -28,7 +28,7 @@ Streamable-HTTP on `PORT` (default **9111**), `HOST` (default `0.0.0.0`), endpoi
 ```sh
 ward sync
 # feed URLs come from env (or SSM if the box has aws creds):
-REDDIT_FRONTPAGE_FEED_URL='https://www.reddit.com/.rss?feed=...&user=...' \
+REDDIT_FRONTPAGE_FEED_URL='https://www.reddit.com/.json?feed=...&user=...' \
   ward run     # streamable-HTTP MCP on :9111, endpoint at /mcp
 ```
 
