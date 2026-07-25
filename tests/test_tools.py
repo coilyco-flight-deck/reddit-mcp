@@ -1,10 +1,10 @@
 """Behavioural tests for the reddit-mcp tools.
 
 The tools are registered with FastMCP without rebinding their names, so the
-plain callables stay directly invokable here. The focus mirrors node-stats-mcp's:
-the read-only + credential-custody envelope. A feed URL is resolved env-first
-then SSM, an unconfigured feed fails loud, the normalization is faithful to the
-routine surface, and there is no write tool.
+plain callables stay directly invokable here. The focus mirrors node-stats-mcp's
+read-only + credential-custody envelope. Private feed URLs resolve env-first
+then SSM, public RSS URLs stay pinned to reddit.com, normalization is faithful
+to each upstream format, and there is no write tool.
 """
 
 from __future__ import annotations
@@ -57,6 +57,23 @@ _FRONTPAGE_PAYLOAD = {
     }
 }
 
+_RSS_PAYLOAD = b"""\
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>reddit.com</title>
+  <entry>
+    <author><name>/u/someone</name></author>
+    <category term="python" label="r/python"/>
+    <content type="html">&lt;p&gt;A summary&lt;/p&gt;</content>
+    <id>t3_rss</id>
+    <link href="https://www.reddit.com/r/python/comments/rss/a_post/"/>
+    <published>2026-07-24T10:00:00+00:00</published>
+    <updated>2026-07-24T10:05:00+00:00</updated>
+    <title>A post from RSS</title>
+  </entry>
+</feed>
+"""
+
 
 def test_frontpage_normalizes(monkeypatch: pytest.MonkeyPatch) -> None:
     server = _load(monkeypatch, {"REDDIT_FRONTPAGE_FEED_URL": "https://feed/frontpage"})
@@ -76,6 +93,90 @@ def test_valid_empty_listing_stays_successful(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(server, "_fetch_json", lambda url: {"data": {"children": []}})
 
     assert server.get_frontpage() == {"source": "frontpage", "count": 0, "items": []}
+
+
+def test_homepage_rss_normalizes(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _load(monkeypatch)
+    response = Mock(ok=True, status_code=200, content=_RSS_PAYLOAD)
+    get = Mock(return_value=response)
+    monkeypatch.setattr(server.requests, "get", get)
+
+    got = server.get_homepage_rss()
+
+    assert got["source"] == "homepage_rss"
+    assert got["count"] == 1
+    assert got["items"][0] == {
+        "dedup_key": "t3_rss",
+        "id": "t3_rss",
+        "subreddit": "python",
+        "author": "someone",
+        "title": "A post from RSS",
+        "url": "https://www.reddit.com/r/python/comments/rss/a_post/",
+        "permalink": "https://www.reddit.com/r/python/comments/rss/a_post/",
+        "published": "2026-07-24T10:00:00+00:00",
+        "updated": "2026-07-24T10:05:00+00:00",
+        "content_html": "<p>A summary</p>",
+    }
+    assert get.call_args.args[0] == f"{server.REDDIT_ORIGIN}/.rss"
+
+
+def test_subreddit_rss_builds_fixed_origin_new_feed(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _load(monkeypatch)
+    seen: dict[str, str] = {}
+
+    def _capture(url: str) -> object:
+        seen["url"] = url
+        return server.SafeElementTree.fromstring(_RSS_PAYLOAD)
+
+    monkeypatch.setattr(server, "_fetch_atom", _capture)
+
+    got = server.get_subreddit_rss(["r/Python", "/r/golang", "python"])
+
+    assert got["subreddits"] == ["python", "golang"]
+    assert got["count"] == 1
+    assert seen["url"] == f"{server.REDDIT_ORIGIN}/r/python+golang/new/.rss?sort=new"
+
+
+@pytest.mark.parametrize("subreddits", [[], ["python/../../elsewhere"], ["https://example.com"]])
+def test_subreddit_rss_rejects_unsafe_names(
+    subreddits: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server = _load(monkeypatch)
+    monkeypatch.setattr(server, "_fetch_atom", Mock())
+
+    with pytest.raises(ValueError):
+        server.get_subreddit_rss(subreddits)
+
+    server._fetch_atom.assert_not_called()
+
+
+def test_subreddit_rss_caps_request_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _load(monkeypatch)
+    monkeypatch.setattr(server, "_fetch_atom", Mock())
+    subreddits = [f"subreddit_{index}" for index in range(server.MAX_SUBREDDITS + 1)]
+
+    with pytest.raises(ValueError, match="may be requested"):
+        server.get_subreddit_rss(subreddits)
+
+    server._fetch_atom.assert_not_called()
+
+
+def test_invalid_rss_is_redacted(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = _load(monkeypatch)
+    secret_url = "https://feed.invalid/listing?token=secret"
+    response = Mock(ok=True, status_code=200, content=b"<not-closed>")
+    monkeypatch.setattr(server.requests, "get", Mock(return_value=response))
+
+    with pytest.raises(
+        server.RedditFeedError, match=r"^Reddit RSS returned invalid XML$"
+    ) as raised:
+        server._fetch_atom(secret_url)
+
+    rendered = f"{raised.value} {caplog.text}"
+    assert secret_url not in rendered
+    assert "token=secret" not in rendered
 
 
 def test_http_failure_is_redacted(
@@ -172,7 +273,7 @@ def test_unconfigured_feed_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_env_takes_precedence_over_ssm(monkeypatch: pytest.MonkeyPatch) -> None:
     server = _load(monkeypatch, {"REDDIT_UPVOTED_FEED_URL": "https://env/upvoted"})
-    # If SSM were consulted it would raise; env must win and be used verbatim.
+    # If SSM were consulted it would raise. Env must win and be used verbatim.
     monkeypatch.setattr(server, "_ssm", lambda name: pytest.fail("SSM must not be read"))
     seen: dict[str, str] = {}
 
@@ -189,8 +290,13 @@ def test_no_write_tools_registered(monkeypatch: pytest.MonkeyPatch) -> None:
     """The read-only invariant: every registered tool reads, none can act."""
     server = _load(monkeypatch)
     names = [t.name for t in server.mcp._tool_manager.list_tools()]
-    assert set(names) == {"get_frontpage", "get_upvoted"}
-    # The action verb is the leading underscore-delimited token; every tool must
+    assert set(names) == {
+        "get_frontpage",
+        "get_upvoted",
+        "get_homepage_rss",
+        "get_subreddit_rss",
+    }
+    # The action verb is the leading underscore-delimited token. Every tool must
     # read (`get_`), never act. A write tool would lead with post/vote/submit/...
     forbidden_verbs = {"post", "vote", "comment", "reply", "submit", "delete", "send", "mark"}
     for n in names:

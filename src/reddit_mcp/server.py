@@ -1,13 +1,17 @@
-"""FastMCP server republishing Kai's private Reddit feeds over streamable-HTTP.
+"""FastMCP server republishing read-only Reddit feeds over streamable-HTTP.
 
-Read-only by construction. Each tool fetches one private Reddit JSON feed URL and
-returns the same normalized records the `daily-educational` cron routine already
-produces (the normalization here is ported verbatim from
-`agentic-os-kai` `my.sources.reddit`, so the tool surface stays faithful to the
-audited routine surface):
+Read-only by construction. The private JSON tools return the same normalized
+records the `daily-educational` cron routine already produces (the normalization
+here is ported verbatim from `agentic-os-kai` `my.sources.reddit`, so the tool
+surface stays faithful to the audited routine surface):
 
 - get_frontpage      - personalized front page (subscribed subs)      [daily-educational]
 - get_upvoted        - posts the user has upvoted (interest signal)    [daily-educational]
+
+The public RSS tools need no credential and add no Reddit API app:
+
+- get_homepage_rss   - Reddit's public homepage Atom feed
+- get_subreddit_rss  - newest posts from caller-selected subreddits
 
 A feed URL is a read token minted by Reddit's `/prefs/feeds/` page for the
 logged-in user - it cannot post, vote, or comment (deploy#30). There is
@@ -24,15 +28,24 @@ never leave the box - only the fetched (already public-to-Kai) reddit records do
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from typing import Any
+from xml.etree import ElementTree as StdlibElementTree
 
 import requests
+from defusedxml import ElementTree as SafeElementTree
+from defusedxml.common import DefusedXmlException
 from mcp.server.fastmcp import FastMCP
 
 # Matches my.sources.reddit so the feeds see the same client Kai's routines use.
 USER_AGENT = "daily-routines/1.0 (by /u/coilysiren)"
 TIMEOUT = 20
+REDDIT_ORIGIN = "https://www.reddit.com"
+MAX_SUBREDDITS = 50
+ATOM_NAMESPACE = "http://www.w3.org/2005/Atom"
+ATOM = {"atom": ATOM_NAMESPACE}
+SUBREDDIT_NAME = re.compile(r"^[A-Za-z0-9_]+$")
 
 # Each feed: (env var checked first, SSM SecureString parameter checked second).
 # The SSM parameter names are taken verbatim from my.sources.reddit - do not
@@ -61,7 +74,7 @@ def _ssm(name: str) -> str | None:
     """Fetch a decrypted SSM parameter value. None if unavailable.
 
     Ported from my.sources.reddit._ssm - the feed URLs are SecureString params
-    read server-side at call time; they are never logged or returned to callers.
+    read server-side at call time. They are never logged or returned to callers.
     """
     try:
         proc = subprocess.run(
@@ -119,6 +132,28 @@ def _fetch_json(url: str) -> object:
         raise RedditFeedError("Reddit feed returned invalid JSON") from None
 
 
+def _fetch_atom(url: str) -> StdlibElementTree.Element:
+    """GET and safely parse a public Reddit Atom feed."""
+    try:
+        response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
+    except requests.Timeout:
+        raise RedditFeedError("Reddit RSS request timed out") from None
+    except requests.RequestException:
+        raise RedditFeedError("Reddit RSS request failed") from None
+
+    if not response.ok:
+        raise RedditFeedError(f"Reddit RSS returned HTTP {response.status_code}")
+
+    try:
+        root = SafeElementTree.fromstring(response.content)
+    except (StdlibElementTree.ParseError, DefusedXmlException):
+        raise RedditFeedError("Reddit RSS returned invalid XML") from None
+
+    if root.tag != f"{{{ATOM_NAMESPACE}}}feed":
+        raise RedditFeedError("Reddit RSS returned an invalid Atom feed")
+    return root
+
+
 def _children(payload: object) -> list[dict]:
     if not isinstance(payload, dict):
         raise RedditFeedError("Reddit feed returned an invalid listing")
@@ -161,6 +196,68 @@ def _posts(feed: str) -> dict[str, Any]:
     return {"source": feed, "count": len(items), "items": items}
 
 
+def _atom_text(entry: StdlibElementTree.Element, path: str) -> str:
+    element = entry.find(path, ATOM)
+    return (element.text or "").strip() if element is not None else ""
+
+
+def _atom_permalink(entry: StdlibElementTree.Element) -> str:
+    for link in entry.findall("atom:link", ATOM):
+        if link.get("rel", "alternate") == "alternate" and link.get("href"):
+            return link.get("href", "")
+    return ""
+
+
+def _atom_subreddit(entry: StdlibElementTree.Element) -> str:
+    category = entry.find("atom:category", ATOM)
+    if category is None:
+        return ""
+    value = (category.get("term") or category.get("label") or "").strip()
+    return value.removeprefix("/r/").removeprefix("r/")
+
+
+def _normalize_atom_entry(entry: StdlibElementTree.Element) -> dict[str, str]:
+    """Flatten a Reddit Atom entry without interpreting its untrusted HTML."""
+    entry_id = _atom_text(entry, "atom:id")
+    permalink = _atom_permalink(entry)
+    return {
+        "dedup_key": entry_id or permalink,
+        "id": entry_id,
+        "subreddit": _atom_subreddit(entry),
+        "author": _atom_text(entry, "atom:author/atom:name").removeprefix("/u/"),
+        "title": _atom_text(entry, "atom:title"),
+        "url": permalink,
+        "permalink": permalink,
+        "published": _atom_text(entry, "atom:published"),
+        "updated": _atom_text(entry, "atom:updated"),
+        "content_html": _atom_text(entry, "atom:content"),
+    }
+
+
+def _rss(source: str, url: str) -> dict[str, Any]:
+    root = _fetch_atom(url)
+    items = [_normalize_atom_entry(entry) for entry in root.findall("atom:entry", ATOM)]
+    return {"source": source, "count": len(items), "items": items}
+
+
+def _subreddit_names(subreddits: list[str]) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for raw_name in subreddits:
+        name = raw_name.strip().removeprefix("/r/").removeprefix("r/").lower()
+        if not name or not SUBREDDIT_NAME.fullmatch(name):
+            raise ValueError("subreddits must contain only Reddit community names")
+        if name not in seen:
+            names.append(name)
+            seen.add(name)
+
+    if not names:
+        raise ValueError("at least one subreddit is required")
+    if len(names) > MAX_SUBREDDITS:
+        raise ValueError(f"at most {MAX_SUBREDDITS} subreddits may be requested")
+    return names
+
+
 def get_frontpage() -> dict[str, Any]:
     """Kai's personalized reddit front page (subscribed subs), newest first.
 
@@ -179,13 +276,38 @@ def get_upvoted() -> dict[str, Any]:
     return _posts("upvoted")
 
 
+def get_homepage_rss() -> dict[str, Any]:
+    """Reddit's public homepage Atom feed.
+
+    This feed is public and unpersonalized. Use get_frontpage for Kai's private
+    subscribed-community home feed. Read-only.
+    """
+    return _rss("homepage_rss", f"{REDDIT_ORIGIN}/.rss")
+
+
+def get_subreddit_rss(subreddits: list[str]) -> dict[str, Any]:
+    """Newest posts from one or more caller-selected subreddits.
+
+    Names may be plain (``python``) or prefixed (``r/python``). The service
+    validates them before constructing a fixed-origin reddit.com Atom URL, so a
+    caller cannot turn the reader into an arbitrary URL fetcher. Read-only.
+    """
+    names = _subreddit_names(subreddits)
+    joined = "+".join(names)
+    result = _rss("subreddit_rss", f"{REDDIT_ORIGIN}/r/{joined}/new/.rss?sort=new")
+    result["subreddits"] = names
+    return result
+
+
 # Register each tool without rebinding its name, so the plain callables stay
-# directly invokable (tests call them; the mcp SDK's decorator return type has
+# directly invokable. Tests call them, and the mcp SDK's decorator return type has
 # varied across versions, so we don't rely on it). Every registered tool is a
 # read - keep it that way (no post, no vote, no comment).
 for _tool in (
     get_frontpage,
     get_upvoted,
+    get_homepage_rss,
+    get_subreddit_rss,
 ):
     mcp.tool()(_tool)
 

@@ -1,12 +1,13 @@
 [project]
 name = "reddit-mcp"
 version = "0.1.0"
-description = "Read-only MCP republishing Kai's private reddit reads (front page and upvoted) over streamable-HTTP."
+description = "Read-only MCP for Kai's private Reddit reads and public Reddit RSS feeds over streamable-HTTP."
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "MIT" }
 authors = [{ name = "Kai Siren" }]
 dependencies = [
+  "defusedxml>=0.7.1",
   "mcp>=1.14.0",
   "requests>=2.32.0",
 ]
