@@ -16,7 +16,7 @@ The deploy surface (namespace, Ingress, Authelia client, values.env) lives in [c
 
 ## Commands
 
-Route every command through ward, never bare `make` / `uv` / `pytest`. Verbs are declared in [`.ward/ward.yaml`](.ward/ward.yaml). Run them as `ward exec <verb>`.
+Route every command through Ward, never bare `uv` / `pytest`. Verbs are declared in [`.ward/ward.yaml`](.ward/ward.yaml). Run them as `ward exec <verb>`.
 
 ## Validation
 
