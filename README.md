@@ -45,6 +45,15 @@ REDDIT_FRONTPAGE_FEED_URL='https://www.reddit.com/.json?feed=...&user=...' \
 
 Dev commands are declared in [`.ward/ward.yaml`](.ward/ward.yaml). Run them as `ward exec <verb>`.
 
+## Image publishing
+
+Every push to canonical `main` publishes the private single-architecture image
+as
+`forgejo.coilysiren.me/coilyco-flight-deck/reddit-mcp:<full-source-sha>`.
+The trusted deploy runner owns the write credential and verifies the remote
+manifest before the workflow succeeds. The deploy repo consumes the exact
+immutable reference with a separate read-only credential.
+
 ## No auth here
 
 Auth is **not** in this source. The Authelia/Traefik public overlay is layered on in the deploy repo, not here (deploy#28 principle: the MCP source stays unchanged by the overlay). This repo just serves the reads over HTTP. Reach is gated at the network / deploy layer.

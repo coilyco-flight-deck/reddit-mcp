@@ -22,6 +22,9 @@ commands:
   build-docker:
     run: docker build -t reddit-mcp:local .
     description: Build the reddit-mcp docker image locally.
+  check-publish:
+    run: bash -n scripts/publish-image.sh
+    description: Validate the trusted Forgejo OCI publisher shell contract.
   run:
     run: uv run reddit-mcp
     description: Run the MCP server locally over streamable-HTTP on :9111.

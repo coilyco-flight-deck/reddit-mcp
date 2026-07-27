@@ -29,7 +29,15 @@ Env is checked first. SSM is the fallback. The keys never leave the box.
 
 ## Deploy
 
-Plain outbound-HTTP reader (no host namespaces, no hostPath). Image published to the in-cluster registry (`192.168.0.194:30500/reddit-mcp:<sha>`) by [`.forgejo/workflows/build-publish.yml`](../.forgejo/workflows/build-publish.yml). Rollout lives in [coilyco-bridge/deploy](https://forgejo.coilysiren.me/coilyco-bridge/deploy) and is out of scope for this repo.
+Plain outbound-HTTP reader (no host namespaces, no hostPath). Every push to
+canonical `main` publishes and verifies the private single-architecture image
+as
+`forgejo.coilysiren.me/coilyco-flight-deck/reddit-mcp:<full-source-sha>`.
+[The source workflow](../.forgejo/workflows/build-publish.yml) owns publishing.
+Rollout lives in
+[coilyco-bridge/deploy](https://forgejo.coilysiren.me/coilyco-bridge/deploy),
+which consumes the exact immutable reference with a read-only package
+credential.
 
 ## See also
 
