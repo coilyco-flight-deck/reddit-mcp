@@ -27,9 +27,11 @@ never leave the box - only the fetched (already public-to-Kai) reddit records do
 
 from __future__ import annotations
 
+import base64
 import os
 import re
 import subprocess
+from importlib.resources import files
 from typing import Any
 from xml.etree import ElementTree as StdlibElementTree
 
@@ -37,6 +39,7 @@ import requests
 from defusedxml import ElementTree as SafeElementTree
 from defusedxml.common import DefusedXmlException
 from mcp.server.fastmcp import FastMCP
+from mcp.types import Icon
 
 # Matches my.sources.reddit so the feeds see the same client Kai's routines use.
 USER_AGENT = "daily-routines/1.0 (by /u/coilysiren)"
@@ -56,6 +59,30 @@ FEEDS = {
     "upvoted": ("REDDIT_UPVOTED_FEED_URL", "/reddit/upvoted-feed-url"),
 }
 
+
+def _reddit_icon() -> Icon:
+    """The Reddit brand mark, embedded as a self-contained data-URI icon.
+
+    Wired into the server's `initialize` response (`serverInfo.icons`) so clients
+    that render server icons - the claude.ai / ChatGPT connector tile - show the
+    Snoo mark instead of a generic placeholder. Same shape as steam-ops'
+    `_steam_icon`: the asset is committed at `assets/reddit-icon.png` (official
+    Snoo-on-orange mark, palette-compressed under 10KB for the ChatGPT icon cap)
+    and read here at import time, base64'd into a `data:` URI rather than served
+    over HTTP so the icon has no external dependency and rides inside the
+    initialize payload itself.
+    """
+    png = files("reddit_mcp.assets").joinpath("reddit-icon.png").read_bytes()
+    encoded = base64.b64encode(png).decode("ascii")
+    return Icon.model_validate(
+        {
+            "src": f"data:image/png;base64,{encoded}",
+            "mimeType": "image/png",
+            "sizes": ["256x256"],
+        }
+    )
+
+
 mcp = FastMCP(
     "reddit",
     host=os.environ.get("HOST", "0.0.0.0"),
@@ -63,6 +90,7 @@ mcp = FastMCP(
     # The deploy runs multiple replicas. Pod-local MCP sessions break as soon
     # as the Service sends a later request to a different replica.
     stateless_http=True,
+    icons=[_reddit_icon()],
 )
 
 
