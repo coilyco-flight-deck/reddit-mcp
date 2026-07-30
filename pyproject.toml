@@ -8,7 +8,10 @@ license = { text = "MIT" }
 authors = [{ name = "Kai Siren" }]
 dependencies = [
   "defusedxml>=0.7.1",
-  "mcp>=1.14.0",
+  # <2: the unlocked Docker build resolves this fresh, and mcp 2.0.0 removed
+  # mcp.server.fastmcp - the 2026-07-29 rebuild crashed on import (deploy#255
+  # icon roll was the rebuild trigger, not the cause).
+  "mcp>=1.14.0,<2",
   "requests>=2.32.0",
 ]
 
