@@ -29,6 +29,9 @@ commands:
     run: uv run reddit-mcp
     description: Run the MCP server locally over streamable-HTTP on :9111.
 
+agent:
+  workflow: merge-remote-main
+
 catalog:
   kind: Component
   type: service
