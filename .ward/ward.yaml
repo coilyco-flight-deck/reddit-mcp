@@ -29,9 +29,6 @@ commands:
     run: uv run reddit-mcp
     description: Run the MCP server locally over streamable-HTTP on :9111.
 
-agent:
-  workflow: merge-remote-main
-
 catalog:
   description: "Read-only MCP republishing Kai's private reddit feeds plus public homepage and caller-selected subreddit Atom feeds over streamable-HTTP. Private feed URLs resolve from env/SSM at runtime and never enter the image. Public URLs stay fixed to reddit.com. Deploy surface lives in coilyco-bridge/deploy."
   dependsOn: []
